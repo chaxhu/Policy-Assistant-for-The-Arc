@@ -12,7 +12,6 @@ The message of the project: *I don't just build an AI assistant, I measure wheth
 |---|---|
 | ![Ask page](docs/screenshots/ask.png) | ![Evaluation page](docs/screenshots/evaluation.png) |
 
-*To do: add `docs/screenshots/ask.png` and `docs/screenshots/evaluation.png` after your first run.*
 
 ## Quick start
 
