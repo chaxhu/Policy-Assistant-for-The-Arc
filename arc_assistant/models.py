@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 SourceType = Literal["fictional", "public"]
 DocStatus = Literal["current", "superseded"]
@@ -61,13 +61,22 @@ class Citation(BaseModel):
 
 
 class LLMAnswer(BaseModel):
-    """The JSON shape the chat model must return. Validated before anything is shown."""
+    """The JSON shape the chat model must return. Validated before anything is shown.
+
+    status and answer are required. Confidence defaults to "low" if the model leaves it out,
+    because a missing label should not throw away an otherwise valid reply.
+    """
 
     status: Literal["answered", "handoff"]
-    answer: str
+    answer: str = ""
     citations: list[str] = Field(default_factory=list)
-    confidence: Literal["high", "medium", "low"]
+    confidence: Literal["high", "medium", "low"] = "low"
     handoff_reason: str | None = None
+
+    @field_validator("status", "confidence", mode="before")
+    @classmethod
+    def _lowercase(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class TokenUsage(BaseModel):
