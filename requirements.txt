@@ -1,0 +1,10 @@
+# Runtime dependencies (Python 3.11+). Versions pinned for reproducible demos.
+streamlit==1.64.0
+openai==3.22.1
+pydantic==2.13.5
+python-dotenv==1.2.4
+PyYAML==6.0.3
+pandas==3.0.6
+plotly==7.1.0
+numpy==2.5.3; python_version >= "3.12"
+numpy==2.4.4; python_version < "3.12"

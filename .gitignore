@@ -1,0 +1,24 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Built index and embedding cache
+index/
+
+# Evaluation runs (keep the committed baseline only)
+eval/runs/*
+!eval/runs/baseline.json
+!eval/runs/.gitkeep
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
