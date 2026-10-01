@@ -138,3 +138,23 @@ def test_invalid_reply_gives_short_readable_reason(small_index) -> None:
     assert answer.handoff_code == "invalid_output"
     assert "status: field required" in answer.handoff_reason
     assert "pydantic" not in answer.handoff_reason
+
+
+def test_current_rule_is_added_when_only_superseded_rule_is_cited(small_index) -> None:
+    answer, _ = ask(
+        small_index,
+        [reply(["adblue#v1.0#1"], answer="AdBlue was not allowed.")],
+        question="What were the previous rules on AdBlue?",
+    )
+    assert [c.chunk_id for c in answer.citations] == ["adblue#v1.0#1", "adblue#v2.0#1"]
+    assert "Current rule (version 1.0):" in answer.answer
+    assert "up to 10 litres" in answer.answer
+
+
+def test_current_rule_not_repeated_when_already_cited(small_index) -> None:
+    answer, _ = ask(
+        small_index,
+        [reply(["adblue#v1.0#1", "adblue#v2.0#1"], answer="It was superseded; now allowed.")],
+        question="What were the previous rules on AdBlue?",
+    )
+    assert "Current rule" not in answer.answer

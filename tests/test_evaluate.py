@@ -175,3 +175,28 @@ def test_real_test_set_meets_minimum_counts() -> None:
     for c in cases:
         if c.expected_behaviour == "answer":
             assert c.expected_doc_ids, c.id
+
+
+def test_judge_references_include_labelled_superseded_versions() -> None:
+    from arc_assistant.evaluate import reference_texts
+
+    card_usage = reference_texts()["card-usage"]
+    assert 'version="2.0" status="current"' in card_usage
+    assert 'version="1.0" status="superseded"' in card_usage
+    assert card_usage.index('status="current"') < card_usage.index('status="superseded"')
+
+
+def test_list_runs_lists_a_named_copy_once(small_index, tmp_path) -> None:
+    from arc_assistant.retrieval import Retriever
+
+    index, client = small_index
+    run = run_evaluation(
+        [case(id="a", expected_doc_ids=["adblue"], must_include=[])],
+        Retriever(index, client, 3),
+        client,
+        Settings(handoff_threshold=0.1),
+        judge=StubJudge(),
+    )
+    save_run(run, tmp_path)
+    named = save_run(run, tmp_path, name="baseline")
+    assert list_runs(tmp_path) == [named]

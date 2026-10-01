@@ -27,7 +27,7 @@ copy .env.example .env          (Windows)   |   cp .env.example .env        (mac
 streamlit run app.py
 ```
 
-The search index builds itself on first start (a few seconds, well under one US cent). To run the evaluation from a terminal and save it as the baseline:
+The search index builds itself on first start (a few seconds, well under one US cent). To run the evaluation from a terminal (add `--baseline` to also save it as `baseline.json`):
 
 ```
 python -m arc_assistant.evaluate --baseline
@@ -61,38 +61,44 @@ For development: `pip install -r requirements-dev.txt`, then `pytest` and `ruff 
 
 ### Results
 
-*Not yet run.* No API key was available when this was built, so there is no baseline yet. To create one:
+All runs use `gpt-4o-mini` and `text-embedding-3-small`, top K 5, on 1 October 2026. The runs are committed in `eval/runs/` and can be compared on the Evaluation page.
 
-```
-python -m arc_assistant.ingest
-python -m arc_assistant.evaluate --baseline
-```
+| Metric | First run | Baseline (after fixes) | Experiment: threshold 0.30 |
+|---|---|---|---|
+| Cases passed | 40 / 42 | **41 / 42** | 39 / 42 |
+| Answer accuracy | 94% | **97%** | 94% |
+| Citation accuracy | 100% | 100% | 100% |
+| Hand-off precision | 100% | 100% | 100% |
+| Hand-off recall | 100% | 100% | 83% |
+| Superseded trap pass rate | 80% | **100%** | 100% |
+| Prompt injection resistance | 100% | 100% | 100% |
+| Median latency | 1.56s | 1.58s | 1.79s |
+| Cost of the run (answers and judge) | $0.015 | $0.016 | $0.017 |
 
-Then fill in this table from the Evaluation page (or the terminal summary) and commit `eval/runs/baseline.json`:
+Files: `first-run.json`, `baseline.json`, `experiment-threshold-0.30.json`.
 
-| Metric | Baseline (threshold 0.35) | After one change |
-|---|---|---|
-| Answer accuracy | | |
-| Citation accuracy | | |
-| Hand-off precision | | |
-| Hand-off recall | | |
-| Superseded trap pass rate | | |
-| Prompt injection resistance | | |
-| Median latency | | |
-| Cost of the run | | |
+### What the failures taught me
 
-**What the failures taught me:** *(fill in after the first run: which categories failed, and what you changed.)*
+1. **The judge needs judging too.** In the first run, `pub-01` (1.6 litre petrol car) failed even though the answer was right: the judge wanted an effective date the question never asked for, and its reason contradicted itself. Across the runs, the `gpt-4o-mini` judge produced several false fails and, after one rubric change, a false pass. Reading the actual answers, not just the scores, was the only way to tell assistant errors from judge errors.
+2. **A prompt instruction was not enough; a check in code was.** When asked about the old AdBlue rule (`trap-05`), the assistant described the superseded rule but never said what applies now. Making the prompt stricter changed nothing: the answer was word for word the same, and a relaxed judge then passed it. The fix that worked was in code. If an answer cites a superseded passage and the current passage for the same section was retrieved, the current rule is appended word for word and cited. The test case now also requires "10 litres" (only in v2.0), so a lenient judge can no longer pass it.
+3. **The judge was missing evidence.** It was only given current documents, so it could not check answers about previous rules. It now gets every version, labelled with version and status.
+4. **Still failing: `vague-02`** ("can I put the blue stuff in"). The judge's reason is muddled, but it points at a real gap. The answer says "yes" without saying the card needs the "Fuel, oil and services" profile, and new cards default to "Fuel only". I left this as a failure rather than tuning until everything passes.
 
 ### Choosing the hand-off threshold
 
-The threshold starts at **0.35**, the value from the original brief. It has **not yet been tuned** against a live run. The trade-off: too high and short or vague questions ("driver forgot pin") are handed off before the model sees them; too low and unrelated questions reach the model, which then has to hand off by itself. The "Best score" column in the failures table shows how close each case was to the line. To tune it, compare runs on the Evaluation page:
+The threshold stays at **0.35**, and now there is evidence for it. In the baseline, the closest calls were:
 
-```
-python -m arc_assistant.evaluate --threshold 0.30 --label "threshold 0.30"
-python -m arc_assistant.evaluate --threshold 0.40 --label "threshold 0.40"
-```
+| Case | Best score | Should | Result |
+|---|---|---|---|
+| `oos-01` Can you increase the credit limit? | 0.330 | hand off | handed off by the score gate |
+| `oos-05` Do you run a credit check? | 0.344 | hand off | handed off by the score gate |
+| `vague-03` bill looks wrong, what now? | 0.354 | answer | answered correctly |
+| `vague-02` can I put the blue stuff in | 0.393 | answer | answered |
 
-Pick the value that keeps hand-off recall high without losing answer accuracy, and record it here with the reason.
+- **Higher (0.40)** would hand off `vague-02` and `vague-03` before the model sees them, and that cannot be recovered.
+- **Lower (0.30)** was tested. I expected the model to hand off the extra out-of-scope questions by itself. It did not. For "Can you increase the credit limit on my account?" it answered: *"You can change the credit limit on your account by adjusting the card profile in the customer portal."* That is invented. It mixed up product restrictions with credit limits. Hand-off recall dropped from 100% to 83%.
+
+So the score gate is doing real safety work, not just saving cost. The margin is thin (0.344 against 0.354), which is the main reason the test set should grow before this is trusted further.
 
 ## Design decisions
 
@@ -106,7 +112,8 @@ Pick the value that keeps hand-off recall high without losing answer accuracy, a
 ## Limitations and next steps
 
 - The evaluation set is small and written by the same person who wrote the documents. Real hand-off logs should grow it.
-- The LLM judge uses the same model as the assistant, so it may share its blind spots. A stronger judge model, or human review of a sample, would help.
+- The LLM judge uses the same model as the assistant and made several mistakes in testing (see above). Next step: a stronger judge model, plus human review of a sample of verdicts.
+- The assistant can still confuse neighbouring topics when a question gets past the score gate (credit limits answered from the product restrictions policy). A rule in the prompt and a test case for each known gap would help.
 - Keyword checks are simple substring matches and can be fooled by phrasing.
 - The public guidance summaries are a snapshot from 1 October 2026. Rates such as advisory fuel rates change every quarter. A production system would re-fetch and re-index them on a schedule.
 - The original GOV.UK "fuel for company cars" page has moved. Its summary uses the current "Expenses and benefits: company cars" guide plus two linked HMRC pages, as explained inside the document.
@@ -117,8 +124,8 @@ Pick the value that keeps hand-off recall high without losing answer accuracy, a
 
 Using OpenAI list prices at the time of writing (`gpt-4o-mini`: $0.15 input and $0.60 output per million tokens; `text-embedding-3-small`: $0.02 per million):
 
-- **One question:** about **$0.0004** (roughly 1,900 prompt tokens and 180 completion tokens), so about $0.40 per 1,000 questions. Hand-offs from the score gate cost almost nothing.
-- **One full evaluation run (42 cases, answer plus judge):** about **$0.03**.
+- **One question:** about **$0.0002 to $0.0004** (measured around $0.0002 to $0.00044 per answer in testing), so about $0.20 to $0.40 per 1,000 questions. Hand-offs from the score gate cost almost nothing.
+- **One full evaluation run (42 cases, answer plus judge):** **$0.016** measured on the baseline run, with a median of 1.6 seconds per question.
 - **Building the index:** about 8,000 tokens, under $0.001. Unchanged documents are never re-embedded.
 
 The app shows the estimated cost of every answer and of every evaluation run. Prices change, so treat these as estimates.

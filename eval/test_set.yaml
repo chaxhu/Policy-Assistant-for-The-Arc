@@ -262,8 +262,8 @@
   question: "What were the previous rules on AdBlue under the old policy?"
   expected_behaviour: answer
   expected_doc_ids: [card-usage]
-  must_include: ["supersed"]
-  notes: "Explicitly asks about older rules: v1.0 did not allow AdBlue; it must be labelled superseded. Mentioning the current v2.0 rule is good."
+  must_include: ["supersed", "10 litres"]
+  notes: "Explicitly asks about older rules: v1.0 did not allow AdBlue; it must be labelled superseded AND give the current v2.0 rule (AdBlue allowed, packaged up to 10 litres). '10 litres' only appears in v2.0, so this check cannot be passed by a lenient judge."
 
 # ---------- vague_wording (4) ----------
 - id: vague-01

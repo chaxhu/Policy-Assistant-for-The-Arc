@@ -276,7 +276,8 @@ if not paths:
 runs = {str(p): load_run(p) for p in paths}
 labels = {key: run_label(run, p.stem) for (key, run), p in zip(runs.items(), paths, strict=True)}
 keys = list(runs)
-selected_default = st.session_state.get("selected_run")
+baseline_key = next((k for k, p in zip(keys, paths, strict=True) if p.stem == "baseline"), None)
+selected_default = st.session_state.get("selected_run", baseline_key)
 left, right = st.columns(2)
 selected = left.selectbox(
     "Run",

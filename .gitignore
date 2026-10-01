@@ -15,6 +15,8 @@ index/
 # Evaluation runs (keep the committed baseline only)
 eval/runs/*
 !eval/runs/baseline.json
+!eval/runs/first-run.json
+!eval/runs/experiment-threshold-0.30.json
 !eval/runs/.gitkeep
 
 # OS and editor
