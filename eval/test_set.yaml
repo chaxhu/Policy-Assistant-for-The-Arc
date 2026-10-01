@@ -3,7 +3,7 @@
 # must_include / must_not_include: case-insensitive substring checks on the answer text.
 # Expected answers come only from the documents in docs/ (public ones from the fetched GOV.UK text).
 
-# ---------- answerable_fictional (14, all 6 current fictional documents) ----------
+# ---------- answerable_fictional (15, all 6 current fictional documents) ----------
 - id: usage-01
   category: answerable_fictional
   question: "Can my drivers buy AdBlue with their fuel cards?"
