@@ -119,6 +119,9 @@ class Answer(BaseModel):
     retrieved: list[RetrievedChunk] = Field(default_factory=list)
     dropped_citations: list[str] = Field(default_factory=list)
     included_superseded: bool = False
+    threshold: float = 0.0
+    model_calls: int = 0
+    added_current_rule: bool = False
     metrics: AnswerMetrics
 
     @property

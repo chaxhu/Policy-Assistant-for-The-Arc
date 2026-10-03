@@ -39,9 +39,6 @@ h1, h2, h3 { color: #0f5257; letter-spacing: -0.01em; }
   padding: 6px 10px; margin: 4px 6px 2px 0; font-size: 0.85rem; color: #1f2a2e; }
 .pa-chip a { color: #0f5257; text-decoration: none; font-weight: 600; }
 .pa-meta { color: #6b7478; font-size: 0.78rem; margin-top: 0.35rem; }
-.pa-passage { border-left: 3px solid #e3ddd2; padding: 4px 0 4px 12px; margin: 8px 0;
-  font-size: 0.86rem; }
-.pa-passage.cited { border-left-color: #0f5257; background: #f3f8f7; }
 .pa-footer { color: #6b7478; font-size: 0.75rem; line-height: 1.4; }
 [class*="st-key-answer-card"] { background: #ffffff; border: 1px solid #e3ddd2;
   border-radius: 14px; padding: 1rem 1.2rem; box-shadow: 0 1px 2px rgba(31, 42, 46, 0.04); }

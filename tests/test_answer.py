@@ -158,3 +158,17 @@ def test_current_rule_not_repeated_when_already_cited(small_index) -> None:
         question="What were the previous rules on AdBlue?",
     )
     assert "Current rule" not in answer.answer
+
+
+def test_trace_facts_are_recorded(small_index) -> None:
+    gated, _ = ask(small_index, None, threshold=0.99)
+    assert (gated.model_calls, gated.threshold) == (0, 0.99)
+    retried, _ = ask(small_index, ["not json", reply(["adblue#v2.0#1"])])
+    assert retried.model_calls == 2
+    assert not retried.added_current_rule
+    old, _ = ask(
+        small_index,
+        [reply(["adblue#v1.0#1"], answer="AdBlue was not allowed.")],
+        question="What were the previous rules on AdBlue?",
+    )
+    assert old.added_current_rule

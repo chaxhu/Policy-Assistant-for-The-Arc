@@ -23,9 +23,30 @@ def date_line(doc: Document) -> str:
     return f"Version {doc.version} · effective {doc.effective_date}"
 
 
+def reader_markdown(body: str) -> str:
+    """Document body for the reader: drop the H1 (shown above) and shrink section headings."""
+    lines = [line for line in body.splitlines() if not line.startswith("# ")]
+    return md_safe(
+        "\n".join(f"#####{line[2:]}" if line.startswith("## ") else line for line in lines)
+    )
+
+
 header("Documents", "Everything the assistant is allowed to answer from. Nothing else.")
 
 items = documents_with_chunk_counts()
+all_docs = [d for d, _ in items]
+fictional = [d for d in all_docs if d.source_type == "fictional"]
+st.markdown(
+    f"**{len(all_docs)} documents** split into **{sum(n for _, n in items)} chunks**: "
+    f"{len(fictional)} fictional policies "
+    f"({sum(d.status == 'superseded' for d in fictional)} of them superseded) and "
+    f"{len(all_docs) - len(fictional)} GOV.UK summaries."
+)
+st.caption(
+    ":material/block: Deliberately not covered: credit limits and credit checks, contract "
+    "cancellation and notice periods, and telematics. Questions on these should be handed off, "
+    "and the evaluation checks that they are."
+)
 choice = st.segmented_control(
     "Show", ["All", "Fictional sample policies", "Public UK guidance"], default="All"
 )
@@ -78,7 +99,12 @@ with reader_column:
             )
         if opened.is_placeholder:
             st.error("Content not yet added. This document is excluded from the index.")
-        if opened.source_url:
-            st.markdown(f"Source: [{opened.source_url}]({opened.source_url})")
         with st.container(border=True, height=720):
-            st.markdown(md_safe(opened.body))
+            st.subheader(opened.title)
+            st.markdown(
+                f'{source_badge(opened.source_type)}<div class="pa-meta">{date_line(opened)}</div>',
+                unsafe_allow_html=True,
+            )
+            if opened.source_url:
+                st.markdown(f"Source: [{opened.source_url}]({opened.source_url})")
+            st.markdown(reader_markdown(opened.body))

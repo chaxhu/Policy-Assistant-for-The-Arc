@@ -58,6 +58,8 @@ def format_cost(cost_usd: float | None) -> str:
     """Human-friendly cost string."""
     if cost_usd is None:
         return "cost unknown"
+    if cost_usd < 0.00001:
+        return "under $0.00001"
     if cost_usd < 0.01:
         return f"${cost_usd:.5f}"
     return f"${cost_usd:.3f}"

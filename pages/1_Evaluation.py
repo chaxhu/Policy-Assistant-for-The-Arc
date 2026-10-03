@@ -11,7 +11,16 @@ from arc_assistant.costs import estimate_eval_run_cost, format_cost
 from arc_assistant.evaluate import list_runs, load_run, load_test_set, run_evaluation, save_run
 from arc_assistant.llm import LLMError
 from arc_assistant.models import EvalRun, EvalSummary
-from arc_assistant.ui import CHART_ORANGE, CHART_TEAL, INK, MUTED, get_client, get_retriever, header
+from arc_assistant.ui import (
+    CHART_ORANGE,
+    CHART_TEAL,
+    INK,
+    MUTED,
+    get_client,
+    get_retriever,
+    header,
+    md_safe,
+)
 
 CATEGORY_NAMES = {
     "answerable_fictional": "Fictional policies",
@@ -20,6 +29,17 @@ CATEGORY_NAMES = {
     "superseded_trap": "Superseded trap",
     "vague_wording": "Vague wording",
     "prompt_injection": "Prompt injection",
+}
+CATEGORY_HELP = {
+    "answerable_fictional": "Normal questions about the six current Sample Fuel Card Co. policies.",
+    "answerable_public": "Questions answered from the GOV.UK guidance summaries.",
+    "out_of_scope": "Topics no document covers (credit limits, cancellation, telematics, "
+    "weather, live prices). The right answer is a hand-off.",
+    "superseded_trap": "Questions where the old v1.0 and current v2.0 card policies disagree. "
+    "Must follow v2.0.",
+    "vague_wording": "Informal phrasing, such as 'card got nicked' or 'the blue stuff'.",
+    "prompt_injection": "Attempts to override the rules. Must refuse, hand off, or answer "
+    "truthfully, never comply.",
 }
 RATE_METRICS = [
     ("answer_accuracy", "Answer accuracy", "Answerable questions that passed every check."),
@@ -97,10 +117,102 @@ def render_metrics(summary: EvalSummary, previous: EvalSummary | None) -> None:
             column.metric(label, value, delta, delta_color=colour, help=help_text, border=True)
 
 
+def _count(results: list, keep) -> tuple[int, int]:
+    """(passed, total) for results matching keep."""
+    chosen = [r for r in results if keep(r)]
+    return sum(r.passed for r in chosen), len(chosen)
+
+
+def _line(ok: bool, text: str) -> str:
+    icon = ":green[:material/check_circle:]" if ok else ":orange[:material/error:]"
+    return f"{icon} {text}"
+
+
+def render_story(run: EvalRun) -> None:
+    """The run in plain English, for someone seeing it for the first time."""
+    results, summary = run.results, run.summary
+    answered, answerable = _count(
+        results,
+        lambda r: r.case.expected_behaviour == "answer" and r.case.category != "prompt_injection",
+    )
+    handed, should_hand = _count(results, lambda r: r.case.category == "out_of_scope")
+    traps, trap_total = _count(results, lambda r: r.case.category == "superseded_trap")
+    resisted, attacks = _count(results, lambda r: r.case.category == "prompt_injection")
+    failed = summary.total_cases - summary.passed_cases
+    precise = summary.handoff_precision in (None, 1.0)
+
+    with st.container(border=True):
+        left, right = st.columns([1, 3], vertical_alignment="center")
+        left.metric(
+            "Cases passed",
+            f"{summary.passed_cases} / {summary.total_cases}",
+            help="A case passes only if the code checks and the LLM judge both agree.",
+        )
+        right.markdown(
+            "\n".join(
+                f"- {line}"
+                for line in [
+                    _line(
+                        answered == answerable,
+                        f"Answered **{answered} of {answerable}** answerable questions correctly.",
+                    ),
+                    _line(
+                        handed == should_hand,
+                        f"Handed **{handed} of {should_hand}** out-of-scope questions to a person.",
+                    ),
+                    _line(
+                        precise,
+                        "Every hand-off was justified."
+                        if precise
+                        else "Some questions it could answer were handed off.",
+                    ),
+                    _line(
+                        traps == trap_total,
+                        f"Followed the current policy in **{traps} of {trap_total}** "
+                        "superseded traps.",
+                    ),
+                    _line(
+                        resisted == attacks,
+                        f"Resisted **{resisted} of {attacks}** prompt injection attempts.",
+                    ),
+                    _line(
+                        failed == 0,
+                        "No failures." if failed == 0 else f"**{failed}** failed: see below.",
+                    ),
+                ]
+            )
+        )
+
+
+def render_failure(result) -> None:
+    """One failing case as a card: question, expected against actual, and why it failed."""
+    case = result.case
+    with st.container(border=True):
+        st.markdown(
+            f":orange-badge[{CATEGORY_NAMES[case.category]}] :gray-badge[{case.id}] "
+            f"**{md_safe(case.question)}**"
+        )
+        expected_col, actual_col = st.columns(2)
+        with expected_col:
+            st.caption("Expected")
+            docs = f" from `{', '.join(case.expected_doc_ids)}`" if case.expected_doc_ids else ""
+            st.markdown(f"**{case.expected_behaviour.title()}**{docs}")
+            if case.notes:
+                st.caption(md_safe(case.notes))
+        with actual_col:
+            st.caption("What happened")
+            cited = f", cited `{', '.join(result.cited_doc_ids)}`" if result.cited_doc_ids else ""
+            st.markdown(f"**{result.actual_behaviour.title()}**{cited}")
+            st.caption(md_safe(result.answer_text[:600]))
+        st.markdown(f":orange[:material/gavel:] **Why it failed:** {md_safe(result.reason)}")
+        st.caption(f"Best retrieval score: {result.best_score:.3f}")
+
+
 def category_chart(run: EvalRun, compare: EvalRun | None) -> go.Figure:
     """Pass rate by category, with the comparison run as a second series if chosen."""
     categories = list(CATEGORY_NAMES)
-    names = [CATEGORY_NAMES[c] for c in categories]
+    counts = {c: sum(r.case.category == c for r in run.results) for c in categories}
+    names = [f"{CATEGORY_NAMES[c]} ({counts[c]})" for c in categories]
     series = [(run, "Selected run", CHART_TEAL)]
     if compare:
         series.append((compare, "Comparison run", CHART_ORANGE))
@@ -108,28 +220,29 @@ def category_chart(run: EvalRun, compare: EvalRun | None) -> go.Figure:
     for item, name, colour in series:
         values = [item.summary.pass_rate_by_category.get(c, 0) * 100 for c in categories]
         fig.add_bar(
-            x=names,
-            y=values,
+            y=names,
+            x=values,
             name=name,
+            orientation="h",
             marker={"color": colour, "cornerradius": 4},
             text=[f"{v:.0f}%" for v in values],
             textposition="outside",
             textfont={"color": INK, "size": 12},
-            hovertemplate="%{x}<br>" + name + ": %{y:.0f}%<extra></extra>",
+            hovertemplate="%{y}<br>" + name + ": %{x:.0f}%<extra></extra>",
         )
     fig.update_layout(
         barmode="group",
         bargap=0.35,
         bargroupgap=0.08,
-        height=340,
-        margin={"l": 10, "r": 10, "t": 30, "b": 10},
+        height=90 + 26 * len(categories) * len(series),
+        margin={"l": 10, "r": 40, "t": 30, "b": 10},
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font={"color": MUTED},
         showlegend=compare is not None,
         legend={"orientation": "h", "y": 1.12, "x": 0},
-        yaxis={"range": [0, 112], "ticksuffix": "%", "gridcolor": "#ece8df", "zeroline": False},
-        xaxis={"tickfont": {"color": INK}},
+        xaxis={"range": [0, 112], "ticksuffix": "%", "gridcolor": "#ece8df", "zeroline": False},
+        yaxis={"tickfont": {"color": INK, "size": 13}, "autorange": "reversed"},
     )
     return fig
 
@@ -286,15 +399,19 @@ selected = left.selectbox(
     format_func=labels.get,
 )
 compare_options = ["none", *[k for k in keys if k != selected]]
+first_run = next((k for k, p in zip(keys, paths, strict=True) if p.stem == "first-run"), None)
 next_older = next((k for k in keys[keys.index(selected) + 1 :]), "none")
+default_compare = first_run if first_run in compare_options else next_older
 compare_key = right.selectbox(
     "Compare with",
     compare_options,
-    index=compare_options.index(next_older),
+    index=compare_options.index(default_compare),
     format_func=lambda k: "No comparison" if k == "none" else labels[k],
 )
 run = runs[selected]
 compare = runs.get(compare_key)
+
+render_story(run)
 
 st.markdown("#### Headline metrics")
 if compare:
@@ -303,6 +420,12 @@ render_metrics(run.summary, compare.summary if compare else None)
 
 st.markdown("#### Pass rate by category")
 st.plotly_chart(category_chart(run, compare), width="stretch", config={"displayModeBar": False})
+with st.expander("What each category tests", icon=":material/help:"):
+    st.markdown(
+        "\n".join(
+            f"- **{CATEGORY_NAMES[c]}:** {help_text}" for c, help_text in CATEGORY_HELP.items()
+        )
+    )
 
 st.markdown("#### Where it fails")
 failures = results_frame(run, failures_only=True)
@@ -310,30 +433,34 @@ if failures.empty:
     st.success("Every case passed in this run.", icon=":material/check_circle:")
 else:
     st.caption(
-        f"{len(failures)} of {run.summary.total_cases} cases failed. Each row shows what was "
+        f"{len(failures)} of {run.summary.total_cases} cases failed. Each card shows what was "
         "expected, what happened, and why the check or the judge failed it."
     )
-    st.dataframe(
-        failures,
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Question": st.column_config.TextColumn(width="medium"),
-            "Answer": st.column_config.TextColumn(width="large"),
-            "Why it failed": st.column_config.TextColumn(width="large"),
-            "Best score": st.column_config.NumberColumn(format="%.3f"),
-        },
-    )
+    for result in run.results:
+        if not result.passed:
+            render_failure(result)
+    with st.expander("Failures as a table"):
+        st.dataframe(
+            failures,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Question": st.column_config.TextColumn(width="medium"),
+                "Answer": st.column_config.TextColumn(width="large"),
+                "Why it failed": st.column_config.TextColumn(width="large"),
+                "Best score": st.column_config.NumberColumn(format="%.3f"),
+            },
+        )
 
 if compare:
-    st.markdown("#### Compare runs")
-    left, right = st.columns([2, 3])
-    left.dataframe(config_table(run, compare), width="stretch")
+    st.markdown("#### What changed between the two runs")
     changes = changed_cases(run, compare)
     if changes.empty:
-        right.info("No case changed between pass and fail.", icon=":material/compare_arrows:")
+        st.caption("No case changed between pass and fail.")
     else:
-        right.dataframe(changes, hide_index=True, width="stretch")
+        st.dataframe(changes, hide_index=True, width="stretch")
+    with st.expander("Settings and metrics side by side"):
+        st.dataframe(config_table(run, compare), width="stretch")
 
 with st.expander("All case results"):
     st.dataframe(results_frame(run, failures_only=False), hide_index=True, width="stretch")

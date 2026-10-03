@@ -141,11 +141,14 @@ def make_handoff_summary(question: str, retrieved: list[RetrievedChunk], reason:
     )
 
 
-def _ask_model(client: LLMClient, user_prompt: str) -> tuple[LLMAnswer | None, str | None]:
-    """Call the model, retrying once with the error if the JSON is invalid."""
+def _ask_model(client: LLMClient, user_prompt: str) -> tuple[LLMAnswer | None, str | None, int]:
+    """Call the model, retrying once with the error if the JSON is invalid.
+
+    Returns (parsed answer or None, error message or None, number of model calls).
+    """
     raw = client.chat_json(SYSTEM_PROMPT, user_prompt)
     try:
-        return parse_llm_answer(raw), None
+        return parse_llm_answer(raw), None, 1
     except ValueError as exc:
         error = str(exc)[:300]
     retry_prompt = (
@@ -154,9 +157,9 @@ def _ask_model(client: LLMClient, user_prompt: str) -> tuple[LLMAnswer | None, s
     )
     raw = client.chat_json(SYSTEM_PROMPT, retry_prompt)
     try:
-        return parse_llm_answer(raw), None
+        return parse_llm_answer(raw), None, 2
     except ValueError as exc:
-        return None, str(exc)[:300]
+        return None, str(exc)[:300], 2
 
 
 def add_current_rules(
@@ -198,6 +201,7 @@ def answer_question(
     started = time.perf_counter()
     usage_before = client.usage.model_copy()
     retrieved, included_superseded = retriever.retrieve(question)
+    model_calls = 0
 
     def build(**fields: object) -> Answer:
         usage = client.usage.minus(usage_before)
@@ -212,6 +216,8 @@ def answer_question(
             question=question,
             retrieved=retrieved,
             included_superseded=included_superseded,
+            threshold=threshold,
+            model_calls=model_calls,
             metrics=metrics,
             **fields,
         )
@@ -232,7 +238,7 @@ def answer_question(
             "score_gate", f"{SCORE_GATE_REASON} (best match {best:.2f}, threshold {threshold:.2f})."
         )
 
-    llm_answer, error = _ask_model(client, build_user_prompt(question, retrieved))
+    llm_answer, error, model_calls = _ask_model(client, build_user_prompt(question, retrieved))
     if llm_answer is None:
         return handoff(
             "invalid_output", f"The model's reply was not in the expected format: {error}."
@@ -248,6 +254,7 @@ def answer_question(
             "The draft answer did not cite any of the retrieved policy passages.",
             dropped_citations=dropped,
         )
+    cited_before = len(citations)
     text, citations = add_current_rules(llm_answer.answer.strip(), citations, retrieved)
     return build(
         status="answered",
@@ -255,4 +262,5 @@ def answer_question(
         citations=citations,
         confidence=llm_answer.confidence,
         dropped_citations=dropped,
+        added_current_rule=len(citations) > cited_before,
     )
