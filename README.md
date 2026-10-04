@@ -141,3 +141,7 @@ eval/test_set.yaml     The evaluation cases
 eval/runs/             Saved evaluation runs (only baseline.json is committed)
 tests/                 Offline tests (pytest), no API key needed
 ```
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). The Sample Fuel Card Co. policies are fictional. The GOV.UK summaries are based on public guidance; always check the linked source.

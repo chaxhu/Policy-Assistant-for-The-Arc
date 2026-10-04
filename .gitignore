@@ -1,5 +1,7 @@
 # Secrets
 .env
+.envrc
+.streamlit/secrets.toml
 
 # Python
 __pycache__/
